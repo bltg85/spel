@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2D Plattformspel med Föränderlig Hjälte</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="1200" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Spelvariabler
+        let player = {
+            x: 50,
+            y: 300,
+            width: 40,
+            height: 60,
+            speed: 5,
+            jumpForce: 15,
+            yVelocity: 0,
+            canDoubleJump: false,
+            isJumping: false,
+            doubleJumped: false,
+            hasSword: false,
+            swinging: false,
+            swingTimer: 0
+        };
+
+        let doubleJumpItem = {
+            x: 400,
+            y: 500,
+            width: 30,
+            height: 30,
+            collected: false
+        };
+
+        let sword = {
+            x: 800,
+            y: 500,
+            width: 40,
+            height: 40,
+            collected: false
+        };
+
+        let notification = {
+            text: "",
+            timer: 0
+        };
+
+        const gravity = 0.5;
+        let ground = 550;
+
+        // Skapa bilder
+        function createHeroImage(hasWings, hasSword) {
+            const heroCanvas = document.createElement('canvas');
+            heroCanvas.width = player.width;
+            heroCanvas.height = player.height;
+            const heroCtx = heroCanvas.getContext('2d');
+            
+            // Rita kropp
+            heroCtx.fillStyle = 'blue';
+            heroCtx.fillRect(0, 20, player.width, player.height - 20);
+            
+            // Rita huvud
+            heroCtx.fillStyle = 'beige';
+            heroCtx.beginPath();
+            heroCtx.arc(player.width / 2, 20, 20, 0, Math.PI * 2);
+            heroCtx.fill();
+
+            if (hasWings) {
+                // Rita vingar
+                heroCtx.fillStyle = 'white';
+                heroCtx.beginPath();
+                heroCtx.moveTo(0, 30);
+                heroCtx.lineTo(player.width / 2, 20);
+                heroCtx.lineTo(player.width, 30);
+                heroCtx.lineTo(player.width / 2, 40);
+                heroCtx.fill();
+            }
+
+            if (hasSword) {
+                // Rita svärd på ryggen
+                heroCtx.fillStyle = 'silver';
+                heroCtx.fillRect(player.width - 5, 30, 5, 30);
+                heroCtx.fillStyle = 'brown';
+                heroCtx.fillRect(player.width - 10, 30, 10, 5);
+            }
+
+            return heroCanvas;
+        }
+
+        function createSwordImage() {
+            const swordCanvas = document.createElement('canvas');
+            swordCanvas.width = 40;
+            swordCanvas.height = 40;
+            const swordCtx = swordCanvas.getContext('2d');
+            
+            // Rita svärdsklingan
+            swordCtx.fillStyle = 'silver';
+            swordCtx.fillRect(15, 0, 10, 30);
+            
+            // Rita svärdshandtaget
+            swordCtx.fillStyle = 'brown';
+            swordCtx.fillRect(10, 30, 20, 10);
+
+            return swordCanvas;
+        }
+
+        let heroImages = {
+            basic: createHeroImage(false, false),
+            wings: createHeroImage(true, false),
+            sword: createHeroImage(false, true),
+            both: createHeroImage(true, true)
+        };
+
+        const swordImage = createSwordImage();
+
+        // Spelets huvudloop
+        function gameLoop() {
+            // Rensa canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Uppdatera spelarens position
+            player.yVelocity += gravity;
+            player.y += player.yVelocity;
+
+            // Kontrollera markkollision
+            if (player.y + player.height > ground) {
+                player.y = ground - player.height;
+                player.yVelocity = 0;
+                player.isJumping = false;
+                player.doubleJumped = false;
+            }
+
+            // Rita spelaren
+            let currentHeroImage;
+            if (player.canDoubleJump && player.hasSword) {
+                currentHeroImage = heroImages.both;
+            } else if (player.canDoubleJump) {
+                currentHeroImage = heroImages.wings;
+            } else if (player.hasSword) {
+                currentHeroImage = heroImages.sword;
+            } else {
+                currentHeroImage = heroImages.basic;
+            }
+            ctx.drawImage(currentHeroImage, player.x, player.y);
+
+            // Rita svärdet om spelaren svingar det
+            if (player.hasSword && player.swinging) {
+                ctx.save();
+                ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
+                ctx.rotate(Math.PI / 4 * Math.sin(player.swingTimer * 0.5));
+                ctx.drawImage(swordImage, -20, -20);
+                ctx.restore();
+
+                player.swingTimer++;
+                if (player.swingTimer > 20) {
+                    player.swinging = false;
+                    player.swingTimer = 0;
+                }
+            }
+
+            // Rita dubbelhopp-föremålet om det inte är upplockat
+            if (!doubleJumpItem.collected) {
+                ctx.fillStyle = 'lime';
+                ctx.fillRect(doubleJumpItem.x, doubleJumpItem.y, doubleJumpItem.width, doubleJumpItem.height);
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(doubleJumpItem.x, doubleJumpItem.y, doubleJumpItem.width, doubleJumpItem.height);
+
+                // Kontrollera kollision med dubbelhopp-föremålet
+                if (player.x < doubleJumpItem.x + doubleJumpItem.width &&
+                    player.x + player.width > doubleJumpItem.x &&
+                    player.y < doubleJumpItem.y + doubleJumpItem.height &&
+                    player.y + player.height > doubleJumpItem.y) {
+                    doubleJumpItem.collected = true;
+                    player.canDoubleJump = true;
+                    notification.text = "Now you can double jump!";
+                    notification.timer = 180; // Visa i 3 sekunder (60 fps * 3)
+                }
+            }
+
+            // Rita svärdet om det inte är upplockat
+            if (!sword.collected) {
+                ctx.drawImage(swordImage, sword.x, sword.y);
+
+                // Kontrollera kollision med svärdet
+                if (player.x < sword.x + sword.width &&
+                    player.x + player.width > sword.x &&
+                    player.y < sword.y + sword.height &&
+                    player.y + player.height > sword.y) {
+                    sword.collected = true;
+                    player.hasSword = true;
+                    notification.text = "You found a sword!";
+                    notification.timer = 180; // Visa i 3 sekunder (60 fps * 3)
+                }
+            }
+
+            // Rita marken
+            ctx.fillStyle = 'brown';
+            ctx.fillRect(0, ground, canvas.width, canvas.height - ground);
+
+            // Visa instruktioner
+            ctx.fillStyle = 'black';
+            ctx.font = '16px Arial';
+            ctx.fillText('Använd vänster/höger piltangenter för att röra dig och mellanslag för att hoppa', 10, 30);
+            ctx.fillText('Tryck F för att svinga svärdet när du har hittat det', 10, 60);
+
+            // Visa notifikation
+            if (notification.timer > 0) {
+                ctx.fillStyle = 'green';
+                ctx.font = 'bold 24px Arial';
+                ctx.fillText(notification.text, canvas.width / 2 - 100, 100);
+                notification.timer--;
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Tangentbordskontroller
+        document.addEventListener('keydown', (e) => {
+            switch(e.key) {
+                case 'ArrowLeft':
+                    player.x = Math.max(0, player.x - player.speed);
+                    break;
+                case 'ArrowRight':
+                    player.x = Math.min(canvas.width - player.width, player.x + player.speed);
+                    break;
+                case ' ':
+                    if (!player.isJumping) {
+                        player.yVelocity = -player.jumpForce;
+                        player.isJumping = true;
+                    } else if (player.canDoubleJump && !player.doubleJumped) {
+                        player.yVelocity = -player.jumpForce;
+                        player.doubleJumped = true;
+                    }
+                    break;
+                case 'f':
+                case 'F':
+                    if (player.hasSword && !player.swinging) {
+                        player.swinging = true;
+                        player.swingTimer = 0;
+                    }
+                    break;
+            }
+        });
+
+        // Starta spelet
+        gameLoop();
+    </script>
+</body>
+</html>
